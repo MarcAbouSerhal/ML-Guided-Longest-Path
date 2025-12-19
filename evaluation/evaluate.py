@@ -35,4 +35,4 @@ def evaluate(real_file, approx_file):
     print("avg_approx_longest_path:", sum(approx) / len(approx))
 
 if __name__ == "__main__":
-    evaluate("computed_paths/longest_paths.txt", "computed_paths/approximate_paths.txt")
+    evaluate("longest_paths.txt", "approximate_paths.txt")
