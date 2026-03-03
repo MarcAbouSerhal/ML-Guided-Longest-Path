@@ -1,94 +1,82 @@
-import torch 
+import torch
 import copy
 from py_extraction.feature_extraction import *
-import threading
+import heapq
 
-def path_from_kth_best_start(adj, model, k = 0):
+
+def beam_search_path(adj, model, width=3):
     """
-    1) extract_features(graph)
-    2) score all nodes with model, pick argmax
-    3) 'remove' node by zeroing incident edges
-    4) extract_features(new graph)
-    5) re-score only neighbors of the removed node
-    6) repeat until all nodes are removed
+    Beam search for the longest/best path in the graph.
+
+    Each beam maintains its own:
+      - score: expected length of full path
+      - current vertex: last vertex in the current path
+      - last beam: previous beam that resulted in current beam
+      - graph state: vertices removed as the path grows
+
+    At every step each beam extends by its locally best candidate;
+    then only the top `width` beams (by score) survive.
+
+    Returns a list of paths
     """
-    model.eval()  # ⬅️ use the passed-in model
+
+    def clone(x): 
+        return copy.deepcopy(x)
+    
+    def remove_vertex(adj, u):
+        n = len(adj)
+        return [[w for w in adj[v] if w != u] if v != u else [] for v in range(n)]
+
+    model.eval()
     device = next(model.parameters()).device
+    n = len(adj)
 
-    graph = copy.deepcopy(adj)
-    n = len(graph)
-    Scores = []
-    Path_estimated = []
-    # initial features & scores for ALL nodes
-    features_all = extract_features(graph)                          # Nx10
-    feats_t = torch.as_tensor(features_all, dtype=torch.float32, device=device)
+    
+    # Score every node on the original graph
+    feats = torch.as_tensor(extract_features(adj), dtype=torch.float32, device=device)
+
     with torch.no_grad():
-        for i in range(n):
-            score = model(feats_t[i:i+1]).squeeze().item()             # ⬅️ model
-            Scores.append((i, score))
-    
-    for _ in range(n):
-        Scores.sort(key=lambda x: x[1], reverse=True)
-        #print(Scores,_) you can remove the comment 
-        if len(Scores) == 0:
+        initial_beams = []
+        for u in range(n):
+            heapq.heappush(initial_beams, (model(feats[u:u + 1]).squeeze().item(), u, -1, clone(adj)))
+            if len(initial_beams) > width:
+                heapq.heappop(initial_beams)
+
+
+    # Start beam search as long as there are remaining beams
+    beam_stages = [initial_beams]
+    while True:
+        beams = beam_stages[-1]
+        num_beams = len(beams)
+
+        beams_candidates = []
+
+        # Find all possible branches
+        for beam_index in range(num_beams):
+            _, curr, _, adj = beams[beam_index]
+
+            neighbors = adj[curr]
+            adj = remove_vertex(adj, curr)
+            feats = torch.as_tensor(extract_features(adj), dtype=torch.float32, device=device)
+            with torch.no_grad():
+                beams_candidates.extend((model(feats[v: v + 1]).squeeze().item(), v, beam_index, clone(adj)) for v in neighbors)
+
+        if not beams_candidates:
             break
-        if _>=1: #pick the k start only for first element, for the rest pick the first only 
-            k=0
-        chosen_node = Scores[k][0]
-        Path_estimated.append(chosen_node)
 
-        # neighbors of chosen_node (save before zeroing)
-        neighbors_list = list(graph[chosen_node])
+        # Take top width next branches
+        next_beams = []
+        for beam in beams_candidates:
+            heapq.heappush(next_beams, beam)
+            if len(next_beams) > width:
+                heapq.heappop(next_beams) 
 
-        # "remove" chosen node by zeroing outgoing and removing incoming refs
-        for i in range(n):
-            if i == chosen_node:
-                graph[i] = []                                          # keep indices stable
-            if chosen_node in graph[i]:
-                graph[i].remove(chosen_node)
-        if neighbors_list == []:
-            break 
-        # neighbors-only re-score
-        features_new = extract_features(graph)
-        feats_t = torch.as_tensor(features_new, dtype=torch.float32, device=device)
+        beam_stages.append(next_beams)
 
-        # drop chosen node from candidates
-        for i in range(n):
-            score = model(feats_t[i:i+1]).squeeze().item()             # ⬅️ model
-            Scores.append((i, score))
-        Scores = [(idx, sc) for (idx, sc) in Scores if idx != chosen_node and (idx in neighbors_list)]
-        with torch.no_grad():
-            for j in neighbors_list:
-                new_score = model(feats_t[j:j+1]).squeeze().item()     # ⬅️ model
-                for k, (idx, _) in enumerate(Scores):
-                    if idx == j:
-                        Scores[k] = (idx, new_score)
-                        break
-                    else:
-                        Scores.append((j, new_score))
+    path = []
+    beam_index = 0
+    for beam_stage in range(len(beam_stages) - 1, -1, -1):
+        path.append(beam_stages[beam_stage][beam_index][1])
+        beam_index = beam_stages[beam_stage][beam_index][2]
     
-    return  Path_estimated
-
-def find_top_k_paths(adj, k, model):
-
-    def run_thread(adj, model, results, idx, param):
-        local_adj = copy.deepcopy(adj)
-        results[idx] = path_from_kth_best_start(
-            local_adj,
-            model,
-            k=param
-        )
-
-    params = list(range(k))
-    results = [None] * k
-
-    threads = []
-    for i, p in enumerate(params):
-        t = threading.Thread(target=run_thread, args=(adj, model, results, i, p))
-        threads.append(t)
-        t.start()
-
-    for t in threads:
-        t.join()
-
-    return results
+    return path[::-1]

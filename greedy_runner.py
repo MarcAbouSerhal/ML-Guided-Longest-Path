@@ -3,7 +3,7 @@ import os
 import sys
 import copy
 
-sys.stdout = open("greedy_paths.txt", "w")
+sys.stdout = open("evaluation/greedy_paths.txt", "w")
 
 base = os.path.dirname(__file__)              
 path =  os.path.join(base, "datasets/graphs.txt")

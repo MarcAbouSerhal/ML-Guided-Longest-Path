@@ -10,7 +10,7 @@ Contents
     - [`fill_dp_grid`](cpp_extraction/algorithms.cpp) for LP DP over subsets
   - [`feature_calculation.cpp`](cpp_extraction/feature_calculation.cpp) extracts feature vectors from graphs.
 - Python code for training the model, running the algorithm and evaluation:
-  - [`algorithm.py`](algorithm.py) implements the pathfinding algorithm starting from each of the top $k$ start in parallel.
+  - [`algorithm.py`](algorithm.py) implements the pathfinding algorithm using beam search with specified width.
   - [`evaluate.py`](evaluation/evaluate.py) compares between the real longest path in a graph and the approximate longest path found by the algorithm.
   - [`model`](model/) contains files for training a neural network, and our trained model as a [`pkl`] file.
 - Datasets & computed results:

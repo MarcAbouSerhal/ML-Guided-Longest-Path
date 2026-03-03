@@ -1,11 +1,11 @@
-from algorithm import find_top_k_paths
+from algorithm import beam_search_path
 from graph_util.make_adj_list import process_graphs
 import os
 import sys
 import model.net as net
 import pickle
 
-sys.stdout = open("approximate_paths.txt", "w")
+sys.stdout = open("evaluation/approximate_paths.txt", "w")
 
 base = os.path.dirname(__file__)              
 path =  os.path.join(base, "datasets/graphs.txt")
@@ -19,8 +19,7 @@ with open(pathh, "rb") as f:
 
 print(len(graphs))
 for adj in graphs:
-    approx_paths = find_top_k_paths(adj, 4, model)
-    best_path = max(approx_paths, key = lambda p: len(p))
+    best_path = beam_search_path(adj, model, 3)
     print(len(best_path))
     print(*best_path)
 
